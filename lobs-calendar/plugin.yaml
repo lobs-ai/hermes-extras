@@ -1,9 +1,8 @@
 name: lobs-calendar
 version: "1.0"
 description: >
-  Rafe's calendar layer over the Hermes google-workspace skill: a named colour
-  scheme for event types, and an idempotent spec-to-calendar sync for course
-  deadlines.
+  A calendar layer over the Hermes google-workspace skill: a named colour scheme
+  for event types, and an idempotent spec-to-calendar sync for course deadlines.
 provides_tools:
   - calendar_create_event
   - calendar_recolor_event

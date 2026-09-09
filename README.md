@@ -1,15 +1,14 @@
 # hermes-extras
 
-Rafe's custom [Hermes](https://hermes-agent.nousresearch.com) plugins. Everything
-here was previously shell scripts in `~/bin` authenticating against a Crew-owned
-Google grant; this repo is the migration onto Hermes' own plugin system and its
-own OAuth token.
+[Hermes](https://hermes-agent.nousresearch.com) plugins built for a specific
+workflow — a student-and-course-staff calendar — and published in case the shape
+is useful to someone else.
 
 ## Why this exists
 
 Hermes ships a `google-workspace` skill that already covers Gmail, Calendar,
-Drive, Sheets and Docs. What it does not have is the small amount of *Rafe-
-specific* logic layered on top:
+Drive, Sheets and Docs. What it does not have is the small amount of
+*opinionated* logic layered on top:
 
 - a **named colour scheme** so a glance at the week distinguishes a class he
   attends from a course he staffs from a student deadline that predicts his
@@ -39,8 +38,20 @@ hermes plugins install lobs-ai/hermes-extras
 hermes plugins enable lobs-calendar
 ```
 
-Auth comes from Hermes' own `google-workspace` skill — `~/.hermes/google_token.json`.
-There is no separate credential for this plugin, and it never reads the Crew keychain.
+Auth comes from Hermes' own `google-workspace` skill —
+`$HERMES_HOME/google_token.json`. This plugin holds no credential of its own,
+which means setup, refresh and revocation all stay in one place.
+
+Set the calendar it writes to in `config.yaml`; unset, it uses your primary
+calendar:
+
+```yaml
+lobs_calendar:
+  calendar_id: abc123@group.calendar.google.com
+```
+
+Every tool and CLI command also takes an explicit calendar argument, which wins
+over the config.
 
 ## Colour scheme
 
@@ -55,8 +66,10 @@ There is no separate credential for this plugin, and it never reads the Crew key
 | `meeting` | peacock | 7 | standing meetings |
 | `personal` | sage | 2 | everything else |
 
-The distinction that earns its keep is `teaching` / `student` / `deadline`: on a
-GSI's calendar those read identically in text and mean three different things.
+The distinction that earns its keep is `teaching` / `student` / `deadline`. On
+the calendar of someone who both takes courses and staffs them, those read
+identically in text and mean three different things: a course you teach, a date
+that predicts your support load, and your own work.
 
 > **Per-event colours are only visible to accounts with write access to the
 > calendar.** A subscriber with "See all event details" sees the whole calendar
@@ -78,30 +91,25 @@ reconciles against the spec:
 An unexplained DELETE in a dry run means stop, not apply — it usually means a
 scrape failed and returned an empty page, not that a deadline was cancelled.
 
-## Migration from `~/bin` (2026-09-09)
+## Migrating an existing stamped calendar
 
-This replaced two shell scripts that authenticated against a **Crew**-owned
-keychain grant (`security find-generic-password -s crew`). The move is the point:
-Rafe is standing on Hermes, so the Google work should live where Hermes can see
-it, with one credential and one setup path.
+The plugin identifies its own events by a private extended property
+(`lobscal=1`). If you are moving from another tool that stamped events with a
+different key, add it to `LEGACY_MARKS` in `coursecal.py` **before the first
+sync**. Otherwise the reconciler sees none of your existing events and creates a
+duplicate of every one.
 
-| Was | Now |
-|---|---|
-| `~/bin/goog cal create … --color X` | `calendar_create_event` tool, or `hermes lobs-calendar` |
-| `~/bin/goog cal recolor <id> X` | `calendar_recolor_event` tool |
-| `~/bin/coursecal sync <spec> --apply` | `hermes lobs-calendar sync <spec> --apply` |
-| keychain `crew/user_rafe_connector-google` | `$HERMES_HOME/google_token.json` |
-| stamp `coursecal=1` | stamp `lobscal=1` (old stamp adopted, see `LEGACY_MARKS`) |
+With a legacy mark declared, a first sync reports `adopt` rather than `create`,
+rewrites each event once onto the current stamp, and is a clean no-op from then
+on.
 
-The weekly course-deadline cron was repointed at the new command. `~/bin/goog`
-and `~/bin/coursecal` still work and are left in place until the Hermes token
-has been through a real refresh cycle; they are the rollback.
+This path was exercised on a real 12-event migration: the dry run reported
+0 create / 12 adopt, the apply re-stamped all 12, the re-run was a no-op, and a
+term-wide audit found no duplicates and nothing uncoloured. Create with
+recurrence and exclusions, recolour, and delete were round-tripped against the
+live API.
 
-### Verified on migration
+## Status
 
-- dry run reported **0 create / 12 adopt** — the legacy-stamp path works, and
-  without it the sync would have duplicated all 12 live events;
-- apply moved all 12 onto the new stamp; the re-run was a clean no-op;
-- an audit across the whole term: **63 events, 0 uncoloured, no duplicates**;
-- create (with recurrence + exclusions), recolour and delete round-tripped
-  against the live API.
+Working, and in daily use against a real calendar. No test suite yet — the
+verification above was manual against the live API.

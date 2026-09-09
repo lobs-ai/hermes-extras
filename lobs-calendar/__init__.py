@@ -1,4 +1,4 @@
-"""lobs-calendar — Rafe's calendar layer over the google-workspace skill.
+"""lobs-calendar — a calendar layer over the google-workspace skill.
 
 Registers four tools and a `hermes lobs-calendar` CLI command group. Auth is
 Hermes' own Google token; this plugin holds no credential of its own.
@@ -7,16 +7,10 @@ Hermes' own Google token; this plugin holds no credential of its own.
 import json
 
 from . import colors
+from .config import FALLBACK_CALENDAR, calendar_id
 from .coursecal import load as load_spec
 from .coursecal import sync as sync_spec
 from .google import Calendar, CalendarError
-
-# "Lobs Planning" — the bot-owned calendar Rafe subscribes to. His own
-# rsymonds@umich.edu is reader-only for this grant and a POST there 403s.
-DEFAULT_CALENDAR = (
-    "78a805eebb268c707d8c488f5b2579eb085db6dbb1e2c9a883df189f09734dc1"
-    "@group.calendar.google.com"
-)
 
 TZ = "America/New_York"
 
@@ -30,7 +24,7 @@ def _err(message, **extra):
 
 
 def _calendar(params):
-    return Calendar(params.get("calendar") or DEFAULT_CALENDAR)
+    return Calendar(calendar_id(params.get("calendar")))
 
 
 # --------------------------------------------------------------------- tools
@@ -138,7 +132,8 @@ def _handle_sync(params, **_):
 
 _CAL_ARG = {
     "type": "string",
-    "description": "Calendar id. Defaults to Lobs Planning, the one Hermes can write.",
+    "description": ("Calendar id. Defaults to lobs_calendar.calendar_id in "
+                    "config.yaml, or the user's primary calendar."),
 }
 
 _SCHEMAS = [
@@ -241,17 +236,17 @@ def _cli_setup(parser):
     audit = sub.add_parser("audit", help="Colour audit over a window")
     audit.add_argument("--start", required=True)
     audit.add_argument("--end", required=True)
-    audit.add_argument("--calendar", default=DEFAULT_CALENDAR)
+    audit.add_argument("--calendar", default=None)
 
     sync = sub.add_parser("sync", help="Reconcile a deadline spec")
     sync.add_argument("spec")
     sync.add_argument("--apply", action="store_true")
-    sync.add_argument("--calendar", default=DEFAULT_CALENDAR)
+    sync.add_argument("--calendar", default=None)
 
     share = sub.add_parser(
         "sharing",
         help="Show who the calendar is shared with (needs the full calendar scope)")
-    share.add_argument("--calendar", default=DEFAULT_CALENDAR)
+    share.add_argument("--calendar", default=None)
 
 
 def _cli_handle(args):
@@ -286,7 +281,7 @@ def _cli_handle(args):
 
     if args.lobscal_cmd == "sharing":
         try:
-            rules = Calendar(args.calendar).acl()
+            rules = Calendar(calendar_id(args.calendar)).acl()
         except CalendarError as exc:
             print(f"{exc}\n\nNote: reading sharing needs the full 'calendar' scope; "
                   "'calendar.events' returns 403.")
@@ -307,7 +302,7 @@ def register(ctx):
                           schema=schema, handler=handler)
     ctx.register_cli_command(
         name="lobs-calendar",
-        help="Rafe's calendar colour scheme and deadline sync",
+        help="Calendar colour scheme and idempotent deadline sync",
         setup_fn=_cli_setup,
         handler_fn=_cli_handle,
     )

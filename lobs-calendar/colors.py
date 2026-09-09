@@ -20,11 +20,12 @@ COLORS = {
     "tomato": "11",
 }
 
-# What each colour MEANS on Rafe's calendars.
+# What each colour MEANS.
 #
-# The three that earn their keep are teaching / student / deadline: on a GSI's
-# calendar those read identically in text and mean three different things —
-# a course he staffs, a date that predicts his support load, and his own work.
+# The three that earn their keep are teaching / student / deadline. On the
+# calendar of someone who both takes courses and staffs them, those read
+# identically in text and mean three different things: a course you teach, a
+# date that predicts your support load, and your own work.
 CATEGORIES = {
     "lecture": "9",     # blueberry — a class he attends
     "teaching": "3",    # grape     — a course he staffs
@@ -72,9 +73,9 @@ def infer(spec):
     """Guess a category for a spec entry that does not state one.
 
     A fallback, not the design. Inference reads words; it cannot know that a
-    course hackathon is Rafe's teaching load rather than his coursework. Spec
-    entries should say ``"color": "teaching"`` and only fall through to here
-    when nobody has decided yet.
+    course hackathon is teaching load rather than coursework. Spec entries
+    should say ``"color": "teaching"`` and only fall through to here when
+    nobody has decided yet.
     """
     if spec.get("color"):
         return resolve(spec["color"])

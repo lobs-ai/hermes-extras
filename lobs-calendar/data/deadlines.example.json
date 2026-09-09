@@ -1,120 +1,65 @@
 {
   "_comment": [
-    "Deadlines synced into Google Calendar by ~/bin/coursecal.",
-    "Every entry cites the page it came from. Only add a date a source states;",
-    "if a date is TBD, leave it out rather than guessing — a wrong date on a",
-    "calendar is worse than a missing one.",
-    "Refreshed weekly by the Monday cron (see ~/.hermes/course-deadlines/README.md).",
-    "Deliberately NOT included: EECS 489 midterm (2026-10-23 09:00) already sits",
-    "on rsymonds@umich.edu as 'EECS 489 - Midterm'; duplicating it is noise."
+    "Example spec. Replace with your own; this file is illustration, not data.",
+    "",
+    "Every entry cites the page it came from in `source`, which lands in the",
+    "event description so an event on a phone can be traced back to the page",
+    "that claimed it. Only add a date a source actually states — if a date is",
+    "TBD, leave it out rather than guessing. A wrong date on a calendar is",
+    "worse than a missing one, because you plan around it.",
+    "",
+    "`key` is the stable identity used for reconciliation. Keep it stable and a",
+    "changed date MOVES the event; change the key and you get a second event.",
+    "",
+    "`color` is a category from colors.py. State it explicitly where the shape",
+    "of the work matters: inference reads words, and it cannot tell that a",
+    "course hackathon is teaching load rather than coursework."
   ],
   "events": [
     {
-      "key": "eecs489:p1",
-      "course": "EECS 489",
-      "title": "P1 due (Sockets and Mininet)",
+      "key": "example:homework-1",
+      "course": "EXAMPLE 101",
+      "title": "Homework 1 due",
       "date": "2026-09-21",
-      "notes": "Assignment 1, 5% of grade. Individual.",
-      "source": "https://www.eecs489.org/",
+      "notes": "5% of grade. Individual.",
+      "source": "https://example.edu/course/",
       "color": "deadline"
     },
     {
-      "key": "eecs489:p2",
-      "course": "EECS 489",
-      "title": "P2 due (Video streaming via CDN)",
+      "key": "example:project-2",
+      "course": "EXAMPLE 101",
+      "title": "Project 2 due",
       "date": "2026-10-16",
-      "notes": "Assignment 2, 15% of grade. Group. 3 late days shared across A2-A4.",
-      "source": "https://www.eecs489.org/",
+      "notes": "15% of grade. Group. Late days shared across projects.",
+      "source": "https://example.edu/course/",
       "color": "deadline"
     },
     {
-      "key": "eecs489:p3",
-      "course": "EECS 489",
-      "title": "P3 due (Reliable transport)",
-      "date": "2026-11-13",
-      "notes": "Assignment 3, 15% of grade. Group.",
-      "source": "https://www.eecs489.org/",
-      "color": "deadline"
-    },
-    {
-      "key": "eecs489:p4",
-      "course": "EECS 489",
-      "title": "P4 due (Static router)",
-      "date": "2026-12-11",
-      "notes": "Assignment 4, 15% of grade. Group.",
-      "source": "https://www.eecs489.org/",
-      "color": "deadline"
-    },
-    {
-      "key": "eecs489:final",
-      "course": "EECS 489",
+      "key": "example:final",
+      "course": "EXAMPLE 101",
       "title": "Final Exam",
       "start": "2026-12-17T10:30",
       "end": "2026-12-17T12:30",
       "notes": "25% of grade. In person.",
-      "source": "https://www.eecs489.org/",
+      "source": "https://example.edu/course/",
       "color": "exam"
     },
     {
-      "key": "aase:lessons-due",
-      "course": "EECS 498 AASE",
-      "title": "Student deadline — 16 guided lessons + setup gate",
-      "date": "2026-09-11",
-      "notes": "GSI: expect a support surge Wed-Thu. 25% of the Apply phase.",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
-      "color": "student"
-    },
-    {
-      "key": "aase:analyze-spec",
-      "course": "EECS 498 AASE",
-      "title": "Analyze spec released to students",
-      "date": "2026-09-21",
-      "notes": "Spec must be ready before this. Gate task published with it.",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
-      "color": "teaching"
-    },
-    {
-      "key": "aase:hackathon1",
-      "course": "EECS 498 AASE",
-      "title": "Hackathon 1 (evening, whole cohort)",
-      "date": "2026-09-24",
-      "notes": "50% of the Apply grade. Course provides workspace: browser VS Code, course model endpoint, repos pre-cloned. Staffed evening.",
-      "source": "https://eecs498-aase.github.io/faq.html",
-      "color": "teaching"
-    },
-    {
-      "key": "aase:apply-build",
-      "course": "EECS 498 AASE",
-      "title": "Student deadline — pair-programmer build due",
+      "key": "example:student-milestone",
+      "course": "EXAMPLE 480",
+      "title": "Student deadline — first build due",
       "date": "2026-09-25",
-      "notes": "Seven fixed features, scored by feature suite.",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
+      "notes": "Course staff view: expect a support surge the day before.",
+      "source": "https://example.edu/course-480/syllabus.html",
       "color": "student"
     },
     {
-      "key": "aase:analyze-due",
-      "course": "EECS 498 AASE",
-      "title": "Student deadline — Agent v0 due (end of week 7)",
-      "date": "2026-10-16",
-      "notes": "Week-7 gate task, eval suite, teardown report.",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
-      "color": "student"
-    },
-    {
-      "key": "aase:showcase",
-      "course": "EECS 498 AASE",
-      "title": "Project Showcase (L28) + course wrap",
-      "date": "2026-12-10",
-      "notes": "Final demos run Dec 8-10, ~30 min per student with staff.",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
-      "color": "teaching"
-    },
-    {
-      "key": "aase:classes-end",
-      "course": "EECS 498 AASE",
-      "title": "Classes end",
-      "date": "2026-12-11",
-      "source": "https://eecs498-aase.github.io/syllabus.html",
+      "key": "example:hackathon",
+      "course": "EXAMPLE 480",
+      "title": "Hackathon (evening, whole cohort)",
+      "date": "2026-09-24",
+      "notes": "Staffed evening. This is teaching load, not coursework — which is why the color is stated rather than inferred.",
+      "source": "https://example.edu/course-480/syllabus.html",
       "color": "teaching"
     }
   ]

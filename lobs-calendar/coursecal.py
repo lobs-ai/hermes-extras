@@ -1,6 +1,6 @@
 """Idempotent spec-to-calendar reconciliation.
 
-The property that makes a weekly cron safe: every event written here carries
+The property that makes a scheduled sync safe: every event written here carries
 private extended properties ``lobscal=1`` and ``key=<stable key>``. A sync
 lists everything with that stamp and reconciles create / update / delete
 against the spec, so re-running changes nothing, a moved date moves the event
@@ -25,9 +25,9 @@ import json
 from . import colors
 
 MARK = "lobscal"
-# The stamp used by the ~/bin/coursecal shell script this plugin replaces.
-# Events written before the migration carry it, and a sync that did not know
-# about it would see zero existing events and duplicate every one of them.
+# Stamps used by tools this plugin replaced. Events written before a migration
+# carry them, and a sync that did not know about them would see zero existing
+# events and duplicate every one. Add yours here BEFORE the first sync.
 LEGACY_MARKS = ("coursecal",)
 TZ = "America/New_York"
 
