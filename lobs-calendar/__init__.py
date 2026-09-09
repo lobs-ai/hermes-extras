@@ -248,6 +248,14 @@ def _cli_setup(parser):
         help="Show who the calendar is shared with (needs the full calendar scope)")
     share.add_argument("--calendar", default=None)
 
+    grant = sub.add_parser(
+        "share",
+        help="Grant someone a role. 'writer' is what makes per-event colours render.")
+    grant.add_argument("email")
+    grant.add_argument("--role", default="writer",
+                       choices=["reader", "writer", "owner", "freeBusyReader"])
+    grant.add_argument("--calendar", default=None)
+
 
 def _cli_handle(args):
     if args.lobscal_cmd == "colors":
@@ -277,6 +285,18 @@ def _cli_handle(args):
         print(f"\n{verb}. {payload['created']} create, {payload['updated']} update, "
               f"{payload['deleted']} delete"
               + ("" if payload["applied"] else ". re-run with --apply"))
+        return 0
+
+    if args.lobscal_cmd == "share":
+        try:
+            rule = Calendar(calendar_id(args.calendar)).share(args.email, args.role)
+        except CalendarError as exc:
+            print(f"{exc}\n\nNote: writing sharing needs the full 'calendar' scope; "
+                  "'calendar.events' returns 403.")
+            return 1
+        print(f"{rule.get('scope', {}).get('value')} is now {rule.get('role')}.")
+        if rule.get("role") in ("writer", "owner"):
+            print("Per-event colours will render for them now.")
         return 0
 
     if args.lobscal_cmd == "sharing":

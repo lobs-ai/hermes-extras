@@ -75,6 +75,14 @@ that predicts your support load, and your own work.
 > calendar.** A subscriber with "See all event details" sees the whole calendar
 > in one flat colour, whatever each event's `colorId` says. If the colours look
 > uniform, that is a sharing permission, not a bug in this code.
+>
+> ```sh
+> hermes lobs-calendar sharing            # who holds what role
+> hermes lobs-calendar share you@example.com   # promote to writer; colours appear
+> ```
+>
+> Both need the full `calendar` OAuth scope; `calendar.events` returns 403 on
+> the ACL endpoints.
 
 ## Idempotency
 

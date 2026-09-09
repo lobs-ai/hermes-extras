@@ -159,3 +159,16 @@ class Calendar:
         render for accounts with write access.
         """
         return self.call("GET", f"/calendars/{self._cal}/acl").get("items", [])
+
+    def share(self, email, role="writer"):
+        """Grant a person a role on this calendar.
+
+        ``writer`` is the level at which Google starts rendering per-event
+        colours for someone; a ``reader`` sees the whole calendar in one flat
+        colour however each event is coloured. Idempotent — PUT on the rule id
+        creates or updates.
+        """
+        rule_id = urllib.parse.quote(f"user:{email}", safe="")
+        return self.call(
+            "PUT", f"/calendars/{self._cal}/acl/{rule_id}",
+            body={"role": role, "scope": {"type": "user", "value": email}})
