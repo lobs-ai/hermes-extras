@@ -135,8 +135,12 @@ def main():
 
     if not args.no_commit and not args.all:
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        # Gmail's after: takes a date; use today so the next run starts here.
-        STATE.write_text(dt.date.today().isoformat())
+        # Gmail's after: has DATE granularity, not time. Committing today would
+        # risk dropping mail that lands after tonight's run but still today, since
+        # after:<today> may exclude that day entirely. Back off a day so runs
+        # always overlap; re-scanning is free because entries are keyed and the
+        # sync is idempotent, whereas a missed deadline is unrecoverable.
+        STATE.write_text((dt.date.today() - dt.timedelta(days=1)).isoformat())
 
 
 if __name__ == "__main__":
