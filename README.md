@@ -77,3 +77,31 @@ reconciles against the spec:
 
 An unexplained DELETE in a dry run means stop, not apply — it usually means a
 scrape failed and returned an empty page, not that a deadline was cancelled.
+
+## Migration from `~/bin` (2026-09-09)
+
+This replaced two shell scripts that authenticated against a **Crew**-owned
+keychain grant (`security find-generic-password -s crew`). The move is the point:
+Rafe is standing on Hermes, so the Google work should live where Hermes can see
+it, with one credential and one setup path.
+
+| Was | Now |
+|---|---|
+| `~/bin/goog cal create … --color X` | `calendar_create_event` tool, or `hermes lobs-calendar` |
+| `~/bin/goog cal recolor <id> X` | `calendar_recolor_event` tool |
+| `~/bin/coursecal sync <spec> --apply` | `hermes lobs-calendar sync <spec> --apply` |
+| keychain `crew/user_rafe_connector-google` | `$HERMES_HOME/google_token.json` |
+| stamp `coursecal=1` | stamp `lobscal=1` (old stamp adopted, see `LEGACY_MARKS`) |
+
+The weekly course-deadline cron was repointed at the new command. `~/bin/goog`
+and `~/bin/coursecal` still work and are left in place until the Hermes token
+has been through a real refresh cycle; they are the rollback.
+
+### Verified on migration
+
+- dry run reported **0 create / 12 adopt** — the legacy-stamp path works, and
+  without it the sync would have duplicated all 12 live events;
+- apply moved all 12 onto the new stamp; the re-run was a clean no-op;
+- an audit across the whole term: **63 events, 0 uncoloured, no duplicates**;
+- create (with recurrence + exclusions), recolour and delete round-tripped
+  against the live API.

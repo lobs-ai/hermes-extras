@@ -4,4 +4,9 @@ description: >
   Rafe's calendar layer over the Hermes google-workspace skill: a named colour
   scheme for event types, and an idempotent spec-to-calendar sync for course
   deadlines.
+provides_tools:
+  - calendar_create_event
+  - calendar_recolor_event
+  - calendar_audit_colors
+  - calendar_sync_spec
 requires_env: []
