@@ -1,0 +1,13 @@
+name: hindsight-primary-only
+version: "1.0"
+# Explicit: the loader sniffs __init__.py for "MemoryProvider" and would otherwise
+# classify this as an exclusive memory backend and never load it.
+kind: standalone
+description: >
+  Stops Hindsight from auto-retaining turns from cron jobs and subagents. Hermes
+  tells every memory provider which context it runs in (agent_context: primary,
+  cron, subagent, flush) and documents that non-primary contexts should skip
+  writes. Honcho and Supermemory honour it. Hindsight ignores it, so every cron
+  run was stored as long-term memory.
+provides_tools: []
+requires_env: []
