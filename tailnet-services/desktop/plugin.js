@@ -1,15 +1,22 @@
 // Services page for the Hermes desktop app. Lists the web services the agent has
 // registered on the backend machine (`hermes tailnet-services add`) with a live
-// health dot, the tailnet URL, a description, the source repo and an Open button.
+// health dot, the tailnet URL, a description, the source repo and an Open link.
 // Data comes from this package's dashboard/plugin_api.py via ctx.rest.
+//
+// Open goes to the app's own right-side Browser. The SDK has no call for that
+// pane, but MessageTextContent renders markdown with the app's link component,
+// and a labeled http(s) link there opens in the Browser on click (⌘-click or
+// middle-click opens the system browser, right-click gives the link menu).
 
 import {
   Button,
+  Codicon,
   CopyButton,
   EmptyState,
   ErrorState,
   GlyphSpinner,
   host,
+  MessageTextContent,
   PALETTE_AREA,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA,
@@ -40,14 +47,39 @@ const CSS = `
 .tsvc-meta{display:flex;align-items:center;gap:6px;min-width:0;font-size:11.5px;color:var(--ui-text-tertiary)}
 .tsvc-url{font-family:var(--font-mono,monospace);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .tsvc-label{color:var(--ui-text-quaternary);flex-shrink:0}
-.tsvc-actions{display:flex;align-items:center;gap:6px;height:20px}
+.tsvc-actions{display:flex;align-items:center;gap:4px;height:20px}
 .tsvc-note{font-size:12px;color:var(--ui-text-tertiary)}
+.tsvc-link{display:inline-flex;align-items:center;min-width:0}
+.tsvc-link .aui-md{width:auto;overflow:visible;font-size:inherit;line-height:inherit;color:inherit}
+.tsvc-link .aui-md>*,.tsvc-link p{margin:0!important;padding:0;line-height:inherit}
+.tsvc-link .aui-md svg{display:none}
+.tsvc-open .aui-md a{display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:4px;font-size:11px;font-weight:500;line-height:16px;white-space:nowrap;color:var(--ui-text-primary);text-decoration:none;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ui-stroke-secondary) 50%,transparent)}
+.tsvc-open .aui-md a:hover{text-decoration:none;background:var(--ui-control-hover-background)}
+.tsvc-url.tsvc-link .aui-md,.tsvc-url.tsvc-link p{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsvc-url.tsvc-link .aui-md a{font-family:var(--font-mono,monospace);color:inherit}
+.tsvc-url.tsvc-link .aui-md a:hover{color:var(--ui-text-primary)}
+.tsvc-ext{padding:0 4px;height:20px;color:var(--ui-text-tertiary)}
+.tsvc-managed{font-size:11px;color:var(--ui-text-tertiary);border-radius:4px;padding:0 5px;line-height:16px;box-shadow:inset 0 0 0 1px var(--ui-stroke-secondary);white-space:nowrap}
 `
 
-function openUrl(ctx, url, name) {
-  // host.openPreview isn't in the SDK today; if it lands, services open in the
-  // app's own preview instead of the system browser.
-  return typeof host.openPreview === 'function' ? host.openPreview(url, name) : ctx.os.openExternal(url)
+// A markdown link, so the app's own link handling decides where it opens. Angle
+// brackets keep a URL with parentheses from ending the link early. The label
+// must never equal the URL: the app treats a bare URL as an autolink and would
+// fetch the page title (or an embed) to display instead.
+function linkMarkdown(label, url) {
+  return `[${label.replace(/([\\`*_[\]<>])/g, '\\$1')}](<${url}>)`
+}
+
+// The URL as its own label, minus the trailing slash so it isn't a bare autolink.
+function urlLabel(url) {
+  return url.replace(/\/$/, '')
+}
+
+function InAppLink({ className, label, url }) {
+  return jsx('span', {
+    className: `tsvc-link ${className || ''}`.trim(),
+    children: jsx(MessageTextContent, { text: linkMarkdown(label, url), media: false })
+  })
 }
 
 function healthTip(health) {
@@ -77,7 +109,10 @@ function ServiceRow({ ctx, service }) {
             jsxs('div', {
               className: 'tsvc-meta',
               children: [
-                jsx('span', { className: 'tsvc-url', title: `${service.url} (${reach}, port ${service.port})`, children: service.url }),
+                jsx(Tip, {
+                  label: `${reach}, port ${service.port}`,
+                  children: jsx(InAppLink, { className: 'tsvc-url', label: urlLabel(service.url), url: service.url })
+                }),
                 jsx(CopyButton, { appearance: 'icon', text: service.url, label: 'Copy URL' })
               ]
             }),
@@ -98,18 +133,39 @@ function ServiceRow({ ctx, service }) {
             })
         ]
       }),
-      jsx('div', {
+      jsxs('div', {
         className: 'tsvc-actions',
-        children: jsx(Button, {
-          variant: 'outline',
-          size: 'xs',
-          disabled: !service.url,
-          onClick: () => void openUrl(ctx, service.url, service.name),
-          children: 'Open'
-        })
+        children: [
+          service.managed &&
+            jsx(Tip, {
+              label: managedTip(service),
+              children: jsx('span', { className: 'tsvc-managed', children: 'starts at boot' })
+            }),
+          service.url
+            ? jsx(InAppLink, { className: 'tsvc-open', label: 'Open', url: service.url })
+            : jsx(Button, { variant: 'outline', size: 'xs', disabled: true, children: 'Open' }),
+          service.url &&
+            jsx(Tip, {
+              label: 'Open in your browser (or ⌘-click Open)',
+              children: jsx(Button, {
+                className: 'tsvc-ext',
+                variant: 'ghost',
+                size: 'xs',
+                'aria-label': `Open ${service.name} in your browser`,
+                onClick: () => void ctx.os.openExternal(service.url),
+                children: jsx(Codicon, { name: 'link-external' })
+              })
+            })
+        ]
       })
     ]
   })
+}
+
+function managedTip(service) {
+  const job = service.launchd || {}
+  const state = job.state ? ` (${job.state}${job.pid ? `, pid ${job.pid}` : ''})` : ''
+  return `launchd runs: ${service.start_cmd}${state}`
 }
 
 function ServicesPage({ ctx }) {

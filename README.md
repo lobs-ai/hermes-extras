@@ -35,6 +35,7 @@ tailnet-services/         # web services on this machine, listed in the desktop 
   __init__.py             # register() — the `hermes tailnet-services` CLI, no tools
   registry.py             # JSON registry under $HERMES_HOME/plugin-data/
   tailnet.py              # tailscale serve, lsof binding check, health probe
+  launchd.py              # per-service LaunchAgent for `add --start`
   dashboard/
     manifest.json         # mounts the API; tab hidden, the web dashboard shows nothing
     plugin_api.py         # GET /api/plugins/tailnet-services/services
@@ -142,7 +143,7 @@ home page, a side project on some port. After a month nobody remembers which
 ones are running or where. This plugin keeps a list of them, makes each one
 reachable from the rest of the tailnet, and shows the list on a Services page
 in the Hermes desktop app with a health dot, the URL, a description, the
-source repo and an Open button.
+source repo and an Open link.
 
 The list only holds what the agent registers on purpose. Nothing is
 auto-discovered, so an entry means someone decided it was worth keeping.
@@ -176,6 +177,52 @@ call and is never stored. The registry lives at
 There are no model tools. The agent uses the CLI from its terminal like a
 person would, which keeps the tool schema unchanged.
 
+### Keeping a service running (`--start`)
+
+A service the agent starts itself can be handed to launchd, so it comes up at
+boot and restarts after a crash:
+
+```sh
+hermes tailnet-services add notes --port 8080 -d "Notes app" \
+  --start "npm run serve -- --port 8080" --cwd ~/src/notes --env NODE_ENV=production
+hermes tailnet-services restart notes     # launchctl kickstart -k, then waits for the port
+hermes tailnet-services logs notes -n 100 # tail its stdout/stderr
+hermes tailnet-services add notes --port 8080 --no-start   # stop supervising, keep the entry
+hermes tailnet-services rm notes          # also unloads the job and deletes its plist
+```
+
+Each service gets its own LaunchAgent,
+`~/Library/LaunchAgents/ai.hermes.tailnet-services.<name>.plist`, rather than
+running as a child of the Hermes gateway, so a gateway restart doesn't bounce
+every service. The job runs `/bin/zsh -lc "exec <command>"` (a login shell for
+the Homebrew `PATH`; `exec` so launchd supervises the real process) in `--cwd`,
+which defaults to the directory you ran `add` from, with `KeepAlive`,
+`RunAtLoad` and a 10 second `ThrottleInterval`. Output goes to
+`$HERMES_HOME/plugin-data/tailnet-services/logs/<name>.log`.
+
+The command must stay in the foreground and listen on `--port`. `add` loads
+the job, waits up to 30 seconds for the port, and only then sets up the serve.
+If nothing listens, it prints the end of the log and exits 1 without
+registering. The job stays loaded so you can read its log; fix the command and
+re-run `add`, or `rm` the name. Re-running `add` without `--start` keeps the
+existing command, the same way `-d` and `--repo` carry forward. `--start` also
+refuses a port something else is already listening on.
+
+`ls` marks supervised services `launchd` and shows the command and pid.
+`check` fails when a supervised job is not loaded or not running.
+
+### Reserved ports
+
+Ports that must never be registered or exposed live in `config.yaml`, and
+`add` refuses them outright with the reason:
+
+```yaml
+tailnet_services:
+  reserved_ports:
+    8000: "production game server; never touch"
+    9000: "must stay loopback-only"
+```
+
 ### Health
 
 The desktop page calls `GET /api/plugins/tailnet-services/services`, which
@@ -184,41 +231,34 @@ timeout. Any HTTP response, a 404 or a 500 included, counts as up: the dot
 answers "is something listening", not "is it healthy". The page refetches
 every 15 seconds.
 
-Open uses `host.openPreview(url, name)` if the desktop app provides it, and
-otherwise opens the system browser through `ctx.os.openExternal`.
+Open, and the URL itself, open the service in the desktop app's built-in
+Browser pane on the right. The plugin SDK has no call for that pane, so both
+are rendered as markdown links through the SDK's `MessageTextContent`, which
+uses the app's own link component: a click opens the in-app Browser,
+⌘-click or middle-click opens the system browser, and right-click gives the
+app's link menu. A small button next to Open always uses the system browser
+(`ctx.os.openExternal`). Supervised services show a "starts at boot" label
+whose tooltip gives the command and its launchd state.
 
 ### Install
 
-The Python half and the dashboard API run on the machine with the services:
+Install it from the desktop app: **Capabilities → Plugins → Install from Git**,
+identifier `lobs-ai/hermes-extras/tailnet-services`. When the app is connected
+to a remote backend, that installs both halves: the agent half lands on the
+backend as `~/.hermes/plugins/tailnet-services/`, and the desktop half
+(`desktop/plugin.js`) as `desktop-plugins/tailnet-services/`. From a shell on
+the backend the equivalent is:
 
 ```sh
-hermes plugins install lobs-ai/hermes-extras      # or `hermes plugins update hermes-extras`
+hermes plugins install lobs-ai/hermes-extras#tailnet-services
 hermes plugins enable tailnet-services
-```
-
-Because this repo is a monorepo, the plugin sits one level down at
-`plugins/hermes-extras/tailnet-services/`. The CLI loader finds it there and
-enables it under the key `hermes-extras/tailnet-services`. The dashboard only
-scans `plugins/*/dashboard/manifest.json` and checks the bare plugin name, so
-two more steps are needed before the API mounts:
-
-```sh
-# expose only the dashboard/ folder at the top level, so the CLI half isn't found twice
-mkdir -p ~/.hermes/plugins/tailnet-services
-ln -s ../hermes-extras/tailnet-services/dashboard ~/.hermes/plugins/tailnet-services/dashboard
-
-# the dashboard API gate wants the bare name in plugins.enabled next to the key:
-# pass your existing list plus "tailnet-services"
-hermes config get plugins.enabled
-hermes config set plugins.enabled '["hermes-extras/tailnet-services", "tailnet-services", ...]'
+hermes plugins update tailnet-services     # later, to pick up changes
 ```
 
 Then restart the dashboard backend once. Plugin API routes mount only at
-startup.
+startup, and the Services page reads `/api/plugins/tailnet-services/services`.
 
-The desktop half is installed from the desktop app: **Capabilities → Plugins →
-Install from Git**, identifier `lobs-ai/hermes-extras/tailnet-services`, with
-only the Desktop component ticked (the agent half is already installed on the
-backend by the steps above). It finds `desktop/plugin.js` under that folder by
-itself and installs it as `desktop-plugins/tailnet-services/`. Flip it on in
-the same list afterwards if it arrives switched off.
+Don't also enable it as `hermes-extras/tailnet-services` from a whole-repo
+install of this monorepo: both copies register the same `hermes
+tailnet-services` command, and only the standalone copy puts `dashboard/`
+where the dashboard looks for it.

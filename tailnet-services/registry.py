@@ -93,6 +93,32 @@ def get(name: str):
     return next((s for s in load() if s["name"] == name), None)
 
 
+def reserved_ports() -> dict:
+    """{port: reason} from config.yaml, ports `add` must refuse outright:
+
+        tailnet_services:
+          reserved_ports:
+            8000: "live game server; never touch"
+
+    Kept in config, not code: which ports are off limits is a fact about one
+    machine, not about the plugin.
+    """
+    from hermes_constants import get_hermes_home
+    path = get_hermes_home() / "config.yaml"
+    try:
+        import yaml
+        section = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("tailnet_services") or {}
+    except Exception:
+        return {}
+    out = {}
+    for port, reason in (section.get("reserved_ports") or {}).items():
+        try:
+            out[int(port)] = str(reason or "reserved")
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def validate_name(name: str) -> str:
     if not NAME_RE.fullmatch(name or ""):
         raise RegistryError(

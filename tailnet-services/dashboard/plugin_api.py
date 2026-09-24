@@ -29,6 +29,7 @@ def _load(mod: str):
 
 registry = _load("registry")
 tailnet = _load("tailnet")
+launchd = _load("launchd")
 
 router = APIRouter()
 
@@ -47,12 +48,15 @@ async def services():
         dns, err = "", f"tailscale status failed: {exc}"
 
     # Probes run in parallel so one hung service costs ~2s total, not 2s each.
-    healths = await asyncio.gather(
-        *(asyncio.to_thread(tailnet.probe, e["port"], 2.0) for e in entries))
+    managed = [e for e in entries if e.get("start_cmd")]
+    healths, jobs = await asyncio.gather(
+        asyncio.gather(*(asyncio.to_thread(tailnet.probe, e["port"], 2.0) for e in entries)),
+        asyncio.gather(*(asyncio.to_thread(_job, e["name"]) for e in managed)))
+    job_by_name = {e["name"]: job for e, job in zip(managed, jobs)}
 
     rows = []
     for entry, health in zip(entries, healths):
-        rows.append({
+        row = {
             "name": entry["name"],
             "port": entry["port"],
             "mode": entry.get("mode", "serve"),
@@ -61,5 +65,18 @@ async def services():
             "repo_url": registry.repo_url(entry.get("repo", "")),
             "url": tailnet.url_for(entry, dns) if dns else None,
             "health": health,
-        })
+            "managed": bool(entry.get("start_cmd")),
+            "start_cmd": entry.get("start_cmd"),
+        }
+        if row["managed"]:
+            row["launchd"] = job_by_name.get(entry["name"])
+        rows.append(row)
     return {"services": rows, "host": dns or None, "error": err}
+
+
+def _job(name: str) -> dict:
+    try:
+        job = launchd.status(name)
+    except Exception as exc:
+        return {"state": None, "pid": None, "error": str(exc)}
+    return {"state": job["state"] if job["loaded"] else "not loaded", "pid": job["pid"]}
