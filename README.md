@@ -1,8 +1,9 @@
 # hermes-extras
 
-[Hermes](https://hermes-agent.nousresearch.com) plugins built for a specific
-workflow — a student-and-course-staff calendar — and published in case the shape
-is useful to someone else.
+[Hermes](https://hermes-agent.nousresearch.com) plugins built for one person's
+setup and published in case the shape is useful to someone else: a
+student-and-course-staff calendar, a list of the web services running on an
+always-on machine, and a memory tweak.
 
 ## Why this exists
 
@@ -23,12 +24,24 @@ than widening the tool schema.
 ## Layout
 
 ```
-lobs-calendar/          # the plugin
+lobs-calendar/            # calendar colour scheme + deadline sync
   plugin.yaml
-  __init__.py           # register() — tools + CLI commands
-  colors.py             # the category scheme (single source of truth)
-  google.py             # thin Calendar client over Hermes' google_token.json
-  coursecal.py          # idempotent spec -> calendar reconciliation
+  __init__.py             # register() — tools + CLI commands
+  colors.py               # the category scheme (single source of truth)
+  google.py               # thin Calendar client over Hermes' google_token.json
+  coursecal.py            # idempotent spec -> calendar reconciliation
+tailnet-services/         # web services on this machine, listed in the desktop app
+  plugin.yaml
+  __init__.py             # register() — the `hermes tailnet-services` CLI, no tools
+  registry.py             # JSON registry under $HERMES_HOME/plugin-data/
+  tailnet.py              # tailscale serve, lsof binding check, health probe
+  dashboard/
+    manifest.json         # mounts the API; tab hidden, the web dashboard shows nothing
+    plugin_api.py         # GET /api/plugins/tailnet-services/services
+    dist/index.js         # empty stub so the web dashboard doesn't flag a missing bundle
+  desktop/
+    plugin.js             # the Services page in the desktop app sidebar
+hindsight-primary-only/   # skip Hindsight auto-retain outside primary sessions
 ```
 
 ## Install
@@ -121,3 +134,91 @@ live API.
 
 Working, and in daily use against a real calendar. No test suite yet — the
 verification above was manual against the live API.
+
+## tailnet-services
+
+An always-on machine collects web services: a search backend in Docker, a
+home page, a side project on some port. After a month nobody remembers which
+ones are running or where. This plugin keeps a list of them, makes each one
+reachable from the rest of the tailnet, and shows the list on a Services page
+in the Hermes desktop app with a health dot, the URL, a description, the
+source repo and an Open button.
+
+The list only holds what the agent registers on purpose. Nothing is
+auto-discovered, so an entry means someone decided it was worth keeping.
+
+### Registering a service
+
+```sh
+hermes tailnet-services add grafana --port 3000 -d "Metrics dashboards"
+hermes tailnet-services add notes --port 8080 --repo owner/notes -d "Notes app"
+hermes tailnet-services ls          # with a live health probe
+hermes tailnet-services check       # exits 1 if anything is down or unserved
+hermes tailnet-services rm notes
+```
+
+`add` checks how the port is bound with `lsof`:
+
+- **Loopback only** (`127.0.0.1`): runs
+  `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`, so the service
+  becomes `https://<machine>.<tailnet>.ts.net:<port>/`, reachable from the
+  tailnet and nowhere else. `rm` runs `tailscale serve --https=<port> off`.
+- **All interfaces**: nothing to serve, and a serve on the same port would
+  collide with it. The URL is `http://<machine>.<tailnet>.ts.net:<port>/`.
+- **Nothing listening**: refused, so the list never starts out wrong. Pass
+  `--mode serve` or `--mode direct` to register ahead of time.
+
+A serve that already existed before `add` is recorded as such, and `rm` leaves
+it alone. The tailnet DNS name comes from `tailscale status --json` on every
+call and is never stored. The registry lives at
+`$HERMES_HOME/plugin-data/tailnet-services/services.json`, written atomically.
+
+There are no model tools. The agent uses the CLI from its terminal like a
+person would, which keeps the tool schema unchanged.
+
+### Health
+
+The desktop page calls `GET /api/plugins/tailnet-services/services`, which
+probes `http://127.0.0.1:<port>/` on the backend machine with a 2 second
+timeout. Any HTTP response, a 404 or a 500 included, counts as up: the dot
+answers "is something listening", not "is it healthy". The page refetches
+every 15 seconds.
+
+Open uses `host.openPreview(url, name)` if the desktop app provides it, and
+otherwise opens the system browser through `ctx.os.openExternal`.
+
+### Install
+
+The Python half and the dashboard API run on the machine with the services:
+
+```sh
+hermes plugins install lobs-ai/hermes-extras      # or `hermes plugins update hermes-extras`
+hermes plugins enable tailnet-services
+```
+
+Because this repo is a monorepo, the plugin sits one level down at
+`plugins/hermes-extras/tailnet-services/`. The CLI loader finds it there and
+enables it under the key `hermes-extras/tailnet-services`. The dashboard only
+scans `plugins/*/dashboard/manifest.json` and checks the bare plugin name, so
+two more steps are needed before the API mounts:
+
+```sh
+# expose only the dashboard/ folder at the top level, so the CLI half isn't found twice
+mkdir -p ~/.hermes/plugins/tailnet-services
+ln -s ../hermes-extras/tailnet-services/dashboard ~/.hermes/plugins/tailnet-services/dashboard
+
+# the dashboard API gate wants the bare name in plugins.enabled next to the key:
+# pass your existing list plus "tailnet-services"
+hermes config get plugins.enabled
+hermes config set plugins.enabled '["hermes-extras/tailnet-services", "tailnet-services", ...]'
+```
+
+Then restart the dashboard backend once. Plugin API routes mount only at
+startup.
+
+The desktop half is installed from the desktop app: **Capabilities → Plugins →
+Install from Git**, identifier `lobs-ai/hermes-extras/tailnet-services`, with
+only the Desktop component ticked (the agent half is already installed on the
+backend by the steps above). It finds `desktop/plugin.js` under that folder by
+itself and installs it as `desktop-plugins/tailnet-services/`. Flip it on in
+the same list afterwards if it arrives switched off.
