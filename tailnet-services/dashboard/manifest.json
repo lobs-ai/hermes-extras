@@ -1,0 +1,9 @@
+{
+  "name": "tailnet-services",
+  "label": "Services",
+  "description": "Web services on this machine, reachable over the tailnet. The UI lives in the desktop app; this manifest only mounts the backend API.",
+  "icon": "Server",
+  "version": "1.0.0",
+  "tab": { "path": "/tailnet-services", "hidden": true },
+  "api": "plugin_api.py"
+}

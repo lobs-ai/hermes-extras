@@ -1,0 +1,10 @@
+name: tailnet-services
+version: "1.0"
+kind: standalone
+description: >
+  A registry of web services running on this machine. Registering one exposes it
+  on the tailnet (a `tailscale serve` HTTPS front for loopback-only services), and
+  the desktop app lists them on a Services page with health, URL, description and
+  source repo. The agent registers services through `hermes tailnet-services`.
+provides_tools: []
+requires_env: []
