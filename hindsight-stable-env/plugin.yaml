@@ -1,0 +1,13 @@
+name: hindsight-stable-env
+version: "1.0"
+# Explicit so the loader never classifies this as a memory backend by sniffing the source.
+kind: standalone
+description: >
+  Stops the bundled Hindsight provider from restarting its daemon on every new
+  session. hindsight-embed stores the daemon port (HINDSIGHT_API_PORT) in the
+  profile .env, but the provider's expected env omits it. Each session start
+  therefore sees a mismatch, rewrites the file and restarts the daemon, and a
+  restart can fail to come back. This carries the on-disk port into the expected
+  env, so an unchanged config no longer looks changed.
+provides_tools: []
+requires_env: []
