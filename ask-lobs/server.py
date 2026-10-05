@@ -187,6 +187,9 @@ class Turn:
     def _transcribe(self):
         """Audio -> timestamped transcript file. Runs before the agent turn, outside the turn lock."""
         TRANSCRIPTS.mkdir(parents=True, exist_ok=True)
+        if not WHISPER_MODEL.exists():  # not in the backup (574 MB, regenerable)
+            raise RuntimeError(f"the whisper model is missing. On the mini: curl -L -o {WHISPER_MODEL} "
+                               "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin")
         stem = pathlib.Path(self.audio).stem
         wav = SHARED_DIR / f"{stem}.16k.wav"
         txt = TRANSCRIPTS / f"{stem}.txt"
