@@ -34,6 +34,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import decisions  # noqa: E402 - the /decisions page lives next to this file
+
 HOME = pathlib.Path.home()
 STATE = HOME / ".hermes" / "ask-lobs"
 TOKEN = (STATE / "token").read_text().strip()
@@ -212,6 +215,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             return self._send(200, "ok")
+        if self.path.split("?")[0] in ("/decisions", "/decisions/"):
+            if not decisions.identity_ok(self.headers):
+                return self._send(403, "This page only opens from Rafe's tailnet devices.")
+            page = decisions.render(decisions.load(), decisions.csrf_token(TOKEN))
+            return self._send(200, page, "text/html; charset=utf-8")
         if self.path.startswith("/shortcut/"):
             parts = self.path[len("/shortcut/"):].split("?")[0].split("/")
             name = "Share to Lobs" if parts[1:] == ["share"] else "Ask Lobs"
@@ -228,6 +236,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, "not found")
 
     def do_POST(self):
+        if self.path == "/decisions/answer":
+            return self._decisions_answer()
         if self.path not in ("/ask", "/share"):
             return self._send(404, "not found")
         if not self._authed():
@@ -261,6 +271,31 @@ class Handler(BaseHTTPRequestHandler):
         msg = ("I'm still finishing something else, so I'll send this answer to Discord."
                if busy else "Still working on that. I'll send the answer to Discord.")
         return self._send(200, msg)
+
+    def _decisions_answer(self):
+        # Tailnet identity (stamped by tailscale serve) plus a CSRF token rendered into
+        # the page: a cross-site form post from some other tab can't read the page to get it.
+        if not decisions.identity_ok(self.headers):
+            return self._send(403, json.dumps({"error": "not your tailnet identity"}), "application/json")
+        if not hmac.compare_digest(self.headers.get("X-Lobs-Csrf", "").encode(),
+                                   decisions.csrf_token(TOKEN).encode()):
+            return self._send(403, json.dumps({"error": "stale page, reload"}), "application/json")
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            answers = json.loads(self.rfile.read(min(n, 200000)) or b"{}").get("answers") or []
+        except ValueError:
+            return self._send(400, json.dumps({"error": "bad request"}), "application/json")
+        batch, snoozed = decisions.apply_answers(answers)
+        if batch:
+            threading.Thread(target=decisions.run_batch, args=(batch, DELIVER), daemon=True).start()
+        bits = []
+        if batch:
+            bits.append(f"Working on {len(batch)} answer{'s' if len(batch) != 1 else ''}. "
+                        "The receipt comes to your DM.")
+        if snoozed:
+            bits.append(f"Snoozed {snoozed} for 3 days.")
+        log({"path": "/decisions/answer", "answered": len(batch), "snoozed": snoozed})
+        return self._send(200, json.dumps({"message": " ".join(bits) or "Nothing to send."}), "application/json")
 
     def _share(self, raw):
         try:
