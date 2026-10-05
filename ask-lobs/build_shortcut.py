@@ -120,7 +120,7 @@ def build_share(url, token):
         show(fetch_id),
     ], ["ActionExtension"],
         ["WFImageContentItem", "WFPDFContentItem", "WFURLContentItem", "WFStringContentItem",
-         "WFSafariWebPageContentItem", "WFGenericFileContentItem"], 59446)
+         "WFSafariWebPageContentItem", "WFGenericFileContentItem", "WFAVAssetContentItem"], 59446)
 
 
 def sign(name, plist):
