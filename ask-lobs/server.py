@@ -53,9 +53,60 @@ FRAME = (
     "ask one short question.]\n\n"
 )
 
+DO_FRAME = (
+    "[Rafe said this by voice through Siri on his phone. Siri already told him: \"{ack}\" "
+    "Now actually do it with your tools. Your reply is sent to his Discord DM as the receipt, "
+    "so reply with one plain line saying exactly what you did, with the concrete details "
+    "(date, time, title, where it went). If you could not do it, or the request was "
+    "ambiguous enough that you had to guess, say so in that line.]\n\n"
+)
+
 # One agent turn at a time: two concurrent `--continue` runs on the same session
 # would interleave their writes to its history.
 _turn_lock = threading.Lock()
+
+# Triage: a ~1-2 s Haiku call decides whether the request is an instruction
+# (speak an acknowledgement now, do it in the background, DM the result) or a
+# question (wait for the real answer). Siri should never sit silent through a
+# 30 s calendar write just to say "done".
+TRIAGE_MODEL = os.environ.get("ASK_LOBS_TRIAGE_MODEL", "claude-haiku-4-5-20251001")
+TRIAGE_TIMEOUT = 8
+TRIAGE_SYSTEM = """You are the router in front of Lobs, Rafe's agent. Lobs has full tools: his calendar, tasks, reminders, email, GitHub, files, web.
+You never answer or perform the request. You only classify it and write one short spoken line.
+
+Output exactly one JSON object and nothing else: {"kind": "do" or "ask", "say": "..."}
+
+kind "do": the request is mainly an instruction to change something or start work, so a spoken acknowledgement is enough. Examples: add, move or cancel an event; remind me; make a task; note that; send or draft a message; fix, start, kick off or check on something and tell me later.
+kind "ask": he wants information spoken back (what, when, where, did, is, how, should, any question), or the request mixes a question with an instruction, or you are unsure.
+
+For "do", "say" is one short sentence in the present progressive that names the action with its key details, as Lobs would say it out loud, e.g. "Adding dinner with Sophie Friday at 7 to your calendar now." or "On it, I'll remind you to call the leasing office Tuesday at noon." Never claim it is already done. No markdown.
+For "ask", "say" is ""."""
+
+try:
+    sys.path.insert(0, str(HOME / ".hermes/hermes-agent"))
+    from agent.auxiliary_client import call_llm  # needs the Hermes venv interpreter
+except Exception as _e:  # noqa: BLE001 - triage is optional; fall back to waiting
+    call_llm = None
+    sys.stderr.write(f"triage disabled: {_e}\n")
+
+
+def triage(q):
+    """Return ("do", spoken ack) or ("ask", ""). Any failure means "ask"."""
+    if call_llm is None:
+        return "ask", ""
+    try:
+        r = call_llm(provider="anthropic", model=TRIAGE_MODEL, max_tokens=120, timeout=TRIAGE_TIMEOUT,
+                     temperature=0, messages=[{"role": "system", "content": TRIAGE_SYSTEM},
+                                              {"role": "user", "content": "Request: " + q}])
+        text = r.choices[0].message.content or ""
+        m = re.search(r"\{.*\}", text, re.S)
+        d = json.loads(m.group(0)) if m else {}
+        kind, say = d.get("kind"), str(d.get("say") or "").strip()
+        if kind == "do" and say and len(say) < 240:
+            return "do", re.sub(r"[*_`#>]+", "", say)
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"triage failed: {str(e)[:200]}\n")
+    return "ask", ""
 
 
 def log(rec):
@@ -74,19 +125,23 @@ def clean(text):
 
 
 class Turn:
-    def __init__(self, question):
+    def __init__(self, question, kind="ask", ack=""):
         self.question = question
+        self.kind = kind
+        self.ack = ack
         self.answer = None
         self.error = None
+        self.started = time.time()
         self.done = threading.Event()
-        self.detached = False  # True once the HTTP caller stopped waiting
+        self.detached = kind == "do"  # True once the HTTP caller stopped waiting
 
     def run(self):
         session = "siri-" + dt.date.today().isoformat()
+        frame = DO_FRAME.format(ack=self.ack.replace('"', "'")) if self.kind == "do" else FRAME
         try:
             with _turn_lock:
                 r = subprocess.run(
-                    [HERMES, "chat", "-Q", "-q", FRAME + self.question,
+                    [HERMES, "chat", "-Q", "-q", frame + self.question,
                      "--continue", session, "--create-if-missing", "--source", "siri",
                      "--run-budget", str(RUN_BUDGET)],
                     capture_output=True, text=True, timeout=RUN_BUDGET + 60, cwd=str(HOME))
@@ -98,10 +153,12 @@ class Turn:
             self.error = str(e)[:300]
         finally:
             self.done.set()
-            log({"q": self.question, "a": self.answer, "err": self.error, "async": self.detached})
+            log({"q": self.question, "kind": self.kind, "ack": self.ack, "a": self.answer,
+                 "err": self.error, "async": self.detached, "secs": round(time.time() - self.started, 1)})
             if self.detached:
                 body = self.answer or ("That one failed: " + (self.error or "unknown error"))
-                subprocess.run([HERMES, "send", "-t", DELIVER, "-s", "🎙 " + self.question[:180], body],
+                subj = ("🎙 " + self.ack) if self.kind == "do" else ("🎙 " + self.question[:180])
+                subprocess.run([HERMES, "send", "-t", DELIVER, "-s", subj[:200], body],
                                capture_output=True, text=True, timeout=120)
 
 
@@ -160,19 +217,20 @@ class Handler(BaseHTTPRequestHandler):
                 pass
         if not q:
             return self._send(400, "I didn't catch a question.")
-        if _turn_lock.locked():
-            busy = True
-        else:
-            busy = False
-        turn = Turn(q)
+        busy = _turn_lock.locked()
+        kind, ack = triage(q)
+        turn = Turn(q, kind, ack)
         threading.Thread(target=turn.run, daemon=True).start()
+        if kind == "do":
+            # Speak the acknowledgement now; the agent does the work and DMs the receipt.
+            return self._send(200, ack + (" I'll message you when it's done." if busy else ""))
         if not busy and turn.done.wait(SYNC_BUDGET):
             return self._send(200, turn.answer or ("That failed: " + (turn.error or "unknown error")))
         turn.detached = True
         if turn.done.is_set():  # finished in the instant between the wait and the flag
             return self._send(200, turn.answer or ("That failed: " + (turn.error or "unknown error")))
-        msg = ("I'm still finishing something else; I'll send this answer to Discord."
-               if busy else "This one's taking a bit. I'll send the answer to Discord.")
+        msg = ("I'm still finishing something else, so I'll send this answer to Discord."
+               if busy else "Still working on that. I'll send the answer to Discord.")
         return self._send(200, msg)
 
 
