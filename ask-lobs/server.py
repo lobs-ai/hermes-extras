@@ -278,6 +278,26 @@ class Handler(BaseHTTPRequestHandler):
         got = self.headers.get("Authorization", "")
         return hmac.compare_digest(got.encode(), ("Bearer " + TOKEN).encode())
 
+    def _body(self, limit):
+        """Request body, Content-Length or chunked. iOS Shortcuts sends large bodies
+        (a voice memo or photo as base64 JSON) chunked with no Content-Length, and
+        tailscale serve passes that through. Returns None when over `limit`."""
+        if "chunked" not in (self.headers.get("Transfer-Encoding") or "").lower():
+            n = int(self.headers.get("Content-Length") or 0)
+            return None if n > limit else self.rfile.read(n)
+        out, total = [], 0
+        while True:
+            size = int(self.rfile.readline().split(b";", 1)[0].strip() or b"0", 16)
+            if size == 0:
+                while self.rfile.readline().strip():  # trailers, then the blank line
+                    pass
+                return b"".join(out)
+            total += size
+            if total > limit:
+                return None
+            out.append(self.rfile.read(size))
+            self.rfile.readline()  # CRLF after each chunk
+
     def _shortcut_link_ok(self, nonce):
         try:
             want, expiry = SHORTCUT_LINK.read_text().split()
@@ -315,12 +335,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, "not found")
         if not self._authed():
             return self._send(401, "unauthorized")
-        n = int(self.headers.get("Content-Length") or 0)
         if self.path == "/share":
-            if n > MAX_SHARE_BYTES:
+            raw = self._body(MAX_SHARE_BYTES)
+            if raw is None:
                 return self._send(413, "That file is too big to send me.")
-            return self._share(self.rfile.read(n))
-        raw = self.rfile.read(min(n, 20000)).decode("utf-8", "replace").strip()
+            return self._share(raw)
+        body = self._body(20000)
+        if body is None:
+            return self._send(413, "That's too long for me to take by voice.")
+        raw = body.decode("utf-8", "replace").strip()
         q = raw
         if raw.startswith("{"):
             try:
@@ -353,9 +376,11 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(self.headers.get("X-Lobs-Csrf", "").encode(),
                                    decisions.csrf_token(TOKEN).encode()):
             return self._send(403, json.dumps({"error": "stale page, reload"}), "application/json")
-        n = int(self.headers.get("Content-Length") or 0)
+        body = self._body(200000)
+        if body is None:
+            return self._send(413, json.dumps({"error": "too large"}), "application/json")
         try:
-            answers = json.loads(self.rfile.read(min(n, 200000)) or b"{}").get("answers") or []
+            answers = json.loads(body or b"{}").get("answers") or []
         except ValueError:
             return self._send(400, json.dumps({"error": "bad request"}), "application/json")
         batch, snoozed = decisions.apply_answers(answers)
@@ -374,6 +399,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             d = json.loads(raw.decode("utf-8", "replace"))
         except ValueError:
+            sys.stderr.write("share: unparseable body len=%d te=%r cl=%r head=%r\n" % (
+                len(raw), self.headers.get("Transfer-Encoding"), self.headers.get("Content-Length"), raw[:40]))
             return self._send(400, "That share didn't come through.")
         note = str(d.get("note") or "").strip()
         text = str(d.get("text") or "").strip()
