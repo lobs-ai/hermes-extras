@@ -1,0 +1,11 @@
+name: fast-ack
+version: "1.0"
+description: >
+  Posts a one-line acknowledgement ("Researching X now, write-up when done")
+  when a Discord turn is still running after a short delay, so a long turn
+  never looks like silence. The line is written by a small, fast model in
+  parallel with the real turn, sent as a silent reply (no push notification),
+  and deleted when the real answer lands. It never enters the session
+  transcript, so prompt caching and role alternation are untouched.
+provides_tools: []
+requires_env: []

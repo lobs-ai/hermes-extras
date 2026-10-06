@@ -43,6 +43,9 @@ tailnet-services/         # web services on this machine, listed in the desktop 
   desktop/
     plugin.js             # the Services page in the desktop app sidebar
 hindsight-primary-only/   # skip Hindsight auto-retain outside primary sessions
+fast-ack/                 # one-line "doing X" reply when a Discord turn runs long
+  plugin.yaml
+  __init__.py             # wraps the adapter's processing hooks; Haiku drafts the line
 ```
 
 ## Install
