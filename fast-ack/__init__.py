@@ -24,7 +24,8 @@ Config (``config.yaml``, all optional)::
 
     fast_ack:
       enabled: true
-      delay_seconds: 20
+      delay_seconds: 45   # replayed 232 Discord turns: at 20 s, 11 acks landed <20 s before the
+                          # answer. At 45 s, 3 did and none <10 s, and every turn over 60 s still got one.
       model: claude-haiku-4-5-20251001
       provider: anthropic
       silent: true
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 CONFIG_SECTION = "fast_ack"
 DEFAULTS = {
     "enabled": True,
-    "delay_seconds": 20.0,
+    "delay_seconds": 45.0,
     "model": "claude-haiku-4-5-20251001",
     "provider": "anthropic",
     "silent": True,
