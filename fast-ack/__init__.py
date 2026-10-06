@@ -11,11 +11,12 @@ How:
   It is used only to reach the live Discord adapter and wrap its
   ``on_processing_start`` / ``on_processing_complete`` lifecycle hooks.
 - On start, an ack line is drafted by a small model in parallel with the turn.
-  If the turn is still running after ``delay_seconds``, the line is posted as a
-  silent reply to the triggering message.
+  If the turn is still running after ``delay_seconds``, the line is posted
+  silently where the answer will land: a reply to the triggering message, or a
+  plain message in the thread when the gateway auto-created one from it.
 - On a successful finish the ack is deleted (``delete_on_success``), so the
   thread ends with the real answer only. On failure it stays as a trace.
-- The ack is sent with the raw Discord message, not ``adapter.send``. It never
+- The ack goes through discord.py directly, not ``adapter.send``. It never
   enters the delivery ledger or the transcript, so it cannot be mistaken for
   the turn's reply and does not disturb prompt caching.
 
@@ -141,7 +142,26 @@ class _Pending:
         self.task: "asyncio.Task | None" = None
 
 
-async def _ack_after_delay(event, state: _Pending, cfg: dict, draft=draft_ack) -> None:
+def _target_id(event):
+    """Where the turn's answer goes: the session's thread/channel, not the raw message's channel.
+    They differ when the gateway auto-creates a thread from a channel message. The raw message
+    then still lives in the parent channel, but the answer lands in the new thread."""
+    src = getattr(event, "source", None)
+    return getattr(src, "thread_id", None) or getattr(src, "chat_id", None)
+
+
+async def _post(adapter, event, ack: str, silent: bool):
+    raw = event.raw_message
+    target = _target_id(event)
+    raw_channel = getattr(getattr(raw, "channel", None), "id", None)
+    if target is None or str(target) == str(raw_channel):
+        return await raw.reply(ack, mention_author=False, silent=silent)
+    # Discord replies can't cross channels, so post plainly in the thread.
+    channel = await adapter._resolve_channel(target)
+    return await channel.send(ack, silent=silent)
+
+
+async def _ack_after_delay(adapter, event, state: _Pending, cfg: dict, draft=draft_ack) -> None:
     started = time.monotonic()
     ack = await draft(event.text or "", cfg)
     remaining = float(cfg["delay_seconds"]) - (time.monotonic() - started)
@@ -153,11 +173,11 @@ async def _ack_after_delay(event, state: _Pending, cfg: dict, draft=draft_ack) -
     if state.done.is_set() or not ack:
         return
     try:
-        state.ack_message = await event.raw_message.reply(
-            ack, mention_author=False, silent=bool(cfg["silent"]))
-        logger.info("[fast-ack] acked after %.1fs: %s", time.monotonic() - started, ack[:120])
+        state.ack_message = await _post(adapter, event, ack, bool(cfg["silent"]))
+        logger.info("[fast-ack] acked after %.1fs in %s: %s", time.monotonic() - started,
+                    _target_id(event), ack[:120])
     except Exception as e:  # noqa: BLE001
-        logger.info("[fast-ack] reply failed: %s", str(e)[:200])
+        logger.info("[fast-ack] post failed: %s", str(e)[:200])
 
 
 def _key(event) -> int:
@@ -181,7 +201,7 @@ def wrap(adapter, draft=draft_ack, settings=_settings) -> None:
             return
         state = _Pending()
         pending[_key(event)] = state
-        state.task = asyncio.create_task(_ack_after_delay(event, state, cfg, draft))
+        state.task = asyncio.create_task(_ack_after_delay(adapter, event, state, cfg, draft))
 
     async def on_processing_complete(event, outcome):
         state = pending.pop(_key(event), None)
